@@ -5,13 +5,19 @@ const client = new OpenAI({
 });
 
 export default async function handler(req, res) {
-  // 🔹 CORS – libera o acesso do seu app (por enquanto, liberando geral)
+  // CORS – libera para qualquer origem (você pode restringir depois ao domínio do app)
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
+  }
+
+  if (req.method === "GET") {
+    return res
+      .status(405)
+      .json({ error: "Método não permitido. Use POST para conversar com a IA." });
   }
 
   if (req.method !== "POST") {
@@ -19,44 +25,52 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const { mensagem, historico } = body || {};
+    const body =
+      typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    const { mensagem, historico } = body;
 
-    if (!mensagem) {
-      return res.status(400).json({ error: "Mensagem não enviada" });
+    if (!mensagem || typeof mensagem !== "string") {
+      return res
+        .status(400)
+        .json({ error: "Campo 'mensagem' é obrigatório." });
     }
 
+    const systemMessage = {
+      role: "system",
+      content:
+        "Você é uma IA do app Psicólogo de Bolso. Seu papel é acolher, validar sentimentos, " +
+        "falar de forma gentil e simples, e sugerir pequenas ações saudáveis (respiração, pausa, journaling). " +
+        "Nunca faça diagnóstico, não fale como se fosse médico ou psicólogo humano. Sempre responda em português brasileiro.",
+    };
+
     const messages = [
-      {
-        role: "system",
-        content:
-          "Você é uma IA acolhedora chamada Psicólogo de Bolso. " +
-          "Você não substitui um psicólogo humano, não faz diagnósticos e não dá conselhos perigosos. " +
-          "Seu foco é ouvir, acolher, validar sentimentos e sugerir passos saudáveis. " +
-          "Responda SEMPRE em português do Brasil, em tom calmo e humano.",
-      },
+      systemMessage,
       ...(historico || []),
       { role: "user", content: mensagem },
     ];
 
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages,
-      max_tokens: 250,
-      temperature: 0.8,
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: messages,
     });
 
-    const resposta = completion.choices?.[0]?.message?.content || 
-      "Desculpe, não consegui responder agora. Podemos tentar de novo em alguns instantes?";
+    let texto = "Desculpe, não consegui responder agora.";
+    try {
+      const out = response.output?.[0]?.content?.[0];
+      if (out?.text?.value) {
+        texto = out.text.value;
+      } else if (typeof out === "string") {
+        texto = out;
+      }
+    } catch (e) {
+      console.warn("Falha ao extrair texto da resposta:", e);
+    }
 
-    return res.status(200).json({ resposta });
-  } catch (erro) {
-    console.error("Erro na IA:", erro);
-    return res.status(500).json({ error: "Erro no servidor da IA" });
+    return res.status(200).json({ resposta: texto });
+  } catch (error) {
+    console.error("Erro na IA:", error);
+    return res
+      .status(500)
+      .json({ error: "Erro interno ao falar com a IA." });
   }
 }
-
-    return response.status(500).json({ error: "Erro no servidor da IA" });
-  }
-}
-
