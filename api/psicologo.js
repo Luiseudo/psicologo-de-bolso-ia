@@ -1,43 +1,61 @@
 import OpenAI from "openai";
 
-export default async function handler(request, response) {
-  try {
-    if (request.method !== "POST") {
-      return response.status(405).json({ error: "Método não permitido" });
-    }
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-    const { mensagem, historico } = request.body;
+export default async function handler(req, res) {
+  // 🔹 CORS – libera o acesso do seu app (por enquanto, liberando geral)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Método não permitido" });
+  }
+
+  try {
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const { mensagem, historico } = body || {};
 
     if (!mensagem) {
-      return response.status(400).json({ error: "Mensagem não enviada" });
+      return res.status(400).json({ error: "Mensagem não enviada" });
     }
 
-    const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    const messages = [
+      {
+        role: "system",
+        content:
+          "Você é uma IA acolhedora chamada Psicólogo de Bolso. " +
+          "Você não substitui um psicólogo humano, não faz diagnósticos e não dá conselhos perigosos. " +
+          "Seu foco é ouvir, acolher, validar sentimentos e sugerir passos saudáveis. " +
+          "Responda SEMPRE em português do Brasil, em tom calmo e humano.",
+      },
+      ...(historico || []),
+      { role: "user", content: mensagem },
+    ];
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Você é um psicólogo acolhedor e empático. Responda de forma humana, calma, direta e com foco emocional.",
-        },
-        ...(historico || []),
-        { role: "user", content: mensagem },
-      ],
-      max_tokens: 200,
+      messages,
+      max_tokens: 250,
       temperature: 0.8,
     });
 
-    const resposta = completion.choices[0].message.content;
+    const resposta = completion.choices?.[0]?.message?.content || 
+      "Desculpe, não consegui responder agora. Podemos tentar de novo em alguns instantes?";
 
-    return response.status(200).json({
-      resposta,
-    });
+    return res.status(200).json({ resposta });
   } catch (erro) {
     console.error("Erro na IA:", erro);
+    return res.status(500).json({ error: "Erro no servidor da IA" });
+  }
+}
+
     return response.status(500).json({ error: "Erro no servidor da IA" });
   }
 }
